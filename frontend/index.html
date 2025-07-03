@@ -1,4 +1,196 @@
 <!DOCTYPE html>
+<<<<<<< HEAD
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mappa dei Contatti</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-draggable@4.4.6/build/web/react-draggable.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { background-size: cover; background-position: center; }
+  </style>
+</head>
+<body class="h-full">
+  <div id="root" class="h-full"></div>
+
+  <script type="text/babel">
+    const {Draggable} = ReactDraggable;
+
+    function ContactNode({contact, onDragStop, onEdit}) {
+      return (
+        <Draggable position={{x: contact.x, y: contact.y}} onStop={(e,d)=>onDragStop(contact.id,d)}>
+          <div className="absolute text-center cursor-move" style={{width:80}} onDoubleClick={()=>onEdit(contact)}>
+            <img src={contact.photo || 'https://via.placeholder.com/64'} className="w-16 h-16 rounded-full object-cover"/>
+            <div className="text-xs">{contact.name} {contact.surname}</div>
+          </div>
+        </Draggable>
+      );
+    }
+
+    function ContactForm({contact, onSave, onCancel, onDelete}) {
+      const [form,setForm] = React.useState({...contact});
+      const handleChange = e => setForm({...form, [e.target.name]: e.target.value});
+      const handlePhoto = e => {
+        const file = e.target.files[0];
+        if(file){
+          const reader = new FileReader();
+          reader.onload = () => setForm({...form, photo: reader.result});
+          reader.readAsDataURL(file);
+        }
+      };
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+          <div className="bg-white p-4 rounded shadow w-80 space-y-2">
+            <h2 className="text-lg font-bold">{contact.id ? 'Modifica' : 'Nuovo'} Contatto</h2>
+            <input name="name" value={form.name} onChange={handleChange} placeholder="Nome" className="border px-2 py-1 w-full"/>
+            <input name="surname" value={form.surname} onChange={handleChange} placeholder="Cognome" className="border px-2 py-1 w-full"/>
+            <input name="phone" value={form.phone} onChange={handleChange} placeholder="Telefono" className="border px-2 py-1 w-full"/>
+            <input name="email" value={form.email} onChange={handleChange} placeholder="Email" className="border px-2 py-1 w-full"/>
+            <input type="file" onChange={handlePhoto} className="w-full"/>
+            <div className="flex justify-end gap-2 pt-2">
+              {onDelete && <button className="text-red-600" onClick={()=>onDelete(form)}>Elimina</button>}
+              <button onClick={onCancel}>Annulla</button>
+              <button className="bg-blue-600 text-white px-2 py-1 rounded" onClick={()=>onSave(form)}>Salva</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App(){
+      const [contacts,setContacts] = React.useState([]);
+      const [editing,setEditing] = React.useState(null);
+      const [bgImage,setBgImage] = React.useState('');
+      const [useServer,setUseServer] = React.useState(false);
+      const mapRef = React.useRef(null);
+
+      const loadLocal = () => {
+        const stored = JSON.parse(localStorage.getItem('contacts')||'[]');
+        setContacts(stored);
+        const bg = localStorage.getItem('bgImage');
+        if(bg) setBgImage(bg);
+      };
+
+      React.useEffect(loadLocal,[]);
+
+      const fetchContacts = async () => {
+        try{
+          const r = await fetch('/api/contacts');
+          if(!r.ok) throw new Error();
+          const data = await r.json();
+          setContacts(data);
+        }catch{
+          setUseServer(false);
+          loadLocal();
+        }
+      };
+
+      React.useEffect(()=>{localStorage.setItem('contacts',JSON.stringify(contacts));},[contacts]);
+      React.useEffect(()=>{localStorage.setItem('bgImage',bgImage||'');},[bgImage]);
+      React.useEffect(()=>{ if(useServer) fetchContacts(); else loadLocal(); },[useServer]);
+
+      const handleAdd = () => {
+        const map = mapRef.current;
+        const cx = map.offsetWidth/2 - 40;
+        const cy = map.offsetHeight/2 - 40;
+        setEditing({id: Date.now(), name:'', surname:'', phone:'', email:'', photo:'', x:cx, y:cy, history:[]});
+      };
+
+      const saveServer = async c => {
+        const exists = contacts.some(p=>p.id===c.id);
+        const method = exists ? 'PUT' : 'POST';
+        const url = exists ? `/api/contacts/${c.id}` : '/api/contacts';
+        await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});
+      };
+
+      const handleSave = async c => {
+        if(useServer) await saveServer(c);
+        setContacts(prev=>{
+          const i = prev.findIndex(p=>p.id===c.id);
+          if(i>=0){
+            const copy=[...prev];
+            copy[i]=c;
+            return copy;
+          }
+          return [...prev,c];
+        });
+        setEditing(null);
+      };
+
+      const handleDelete = async c => {
+        if(useServer) await fetch(`/api/contacts/${c.id}`,{method:'DELETE'});
+        setContacts(prev=>prev.filter(p=>p.id!==c.id));
+        setEditing(null);
+      };
+
+      const handleDragStop = async (id,data) => {
+        let updated;
+        setContacts(prev=>prev.map(p=>{
+          if(p.id===id){
+            const map = mapRef.current;
+            const cx = map.offsetWidth/2;
+            const cy = map.offsetHeight/2;
+            const ring = map.offsetWidth/10; // five rings
+            const dx = data.x + 40 - cx;
+            const dy = data.y + 40 - cy;
+            const r = Math.sqrt(dx*dx + dy*dy);
+            const level = Math.min(5, Math.ceil(r / ring));
+            const history = p.history || [];
+            history.push({time: Date.now(), level});
+            updated = {...p, x:data.x, y:data.y, history};
+            return updated;
+          }
+          return p;
+        }));
+        if(useServer && updated) await saveServer(updated);
+      };
+
+      const handleBgUpload = e => {
+        const file = e.target.files[0];
+        if(file){
+          const reader = new FileReader();
+          reader.onload=()=>setBgImage(reader.result);
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const style = bgImage ? {backgroundImage:`url(${bgImage})`} : {};
+
+      return (
+        <div className="h-full flex flex-col">
+          <header className="p-2 bg-gray-800 text-white flex justify-between items-center">
+            <span className="font-bold">Mappa dei Contatti</span>
+            <div className="space-x-2 text-sm flex items-center">
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={useServer} onChange={e=>setUseServer(e.target.checked)} />
+                Usa backend
+              </label>
+              <input type="file" onChange={handleBgUpload} />
+              <button className="bg-blue-600 px-2 py-1 rounded" onClick={handleAdd}>Aggiungi</button>
+            </div>
+          </header>
+          <div ref={mapRef} id="map" className="flex-1 relative" style={style}>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              {[1,2,3,4,5].map(i=>(
+                <div key={i} className="absolute border border-gray-400 rounded-full" style={{width:`${i*20}%`,height:`${i*20}%`,marginLeft:`-${i*10}%`,marginTop:`-${i*10}%`}}></div>
+              ))}
+              <div className="absolute w-8 h-8 rounded-full bg-gray-800 text-white flex items-center justify-center text-xs">Tu</div>
+            </div>
+            {contacts.map(c=>(
+              <ContactNode key={c.id} contact={c} onDragStop={handleDragStop} onEdit={setEditing}/>
+            ))}
+          </div>
+          {editing && <ContactForm contact={editing} onSave={handleSave} onCancel={()=>setEditing(null)} onDelete={contacts.some(p=>p.id===editing.id)?handleDelete:null}/>}        
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+=======
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -18,6 +210,7 @@
         document.getElementById('message').textContent = 'Error fetching message';
         console.error(err);
       });
+>>>>>>> main
   </script>
 </body>
 </html>
