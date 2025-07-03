@@ -1,10 +1,14 @@
 const express = require('express');
 const path = require('path');
+<<<<<<< HEAD
 const sqlite3 = require('sqlite3').verbose();
+=======
+>>>>>>> main
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+<<<<<<< HEAD
 app.use(express.json());
 
 // database setup
@@ -88,6 +92,14 @@ app.delete('/api/contacts/:id', (req, res) => {
       res.json({ ok: true });
     });
   });
+=======
+// Serve static files from the frontend directory
+app.use(express.static(path.join(__dirname, 'frontend')));
+
+// API endpoint
+app.get('/api/message', (req, res) => {
+  res.json({ message: 'Hello from backend' });
+>>>>>>> main
 });
 
 // Fallback: serve index.html for any other routes
